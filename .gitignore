@@ -34,3 +34,20 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Additional ignores
+
+# OS固有のファイル
+Thumbs.db
+
+# コンパイル結果
+*.class
+*.o
+*.out
+
+# パッケージ依存ファイル
+vendor/
+
+# IDEの設定ファイル
+.idea/
+.vscode/

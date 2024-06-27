@@ -1,113 +1,195 @@
-import Image from "next/image";
+//cd pos-analysis-app && npm run dev
+"use client";
+
+import { useState, useRef, useEffect } from 'react';
+import axios from 'axios';
+import Quagga from 'quagga';
 
 export default function Home() {
+  const [code, setCode] = useState('');
+  const [productName, setProductName] = useState('');
+  const [productPrice, setProductPrice] = useState('');
+  const [purchaseList, setPurchaseList] = useState([]);
+  const [totalAmount, setTotalAmount] = useState(0);
+  const [totalAmountWithoutTax, setTotalAmountWithoutTax] = useState(0);
+  const [showPopup, setShowPopup] = useState(false);
+  const videoRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const initQuagga = () => {
+      if (videoRef.current) {
+        Quagga.init({
+          inputStream: {
+            type: 'LiveStream',
+            target: videoRef.current,
+            constraints: {
+              facingMode: 'environment'
+            }
+          },
+          decoder: {
+            readers: ['ean_reader', 'ean_8_reader']
+          }
+        }, (err) => {
+          if (err) {
+            console.error(err);
+            return;
+          }
+          Quagga.start();
+        });
+
+        Quagga.onDetected((data) => {
+          const scannedCode = data.codeResult.code;
+          setCode(scannedCode);
+          handleScan(scannedCode);
+          Quagga.stop();
+        });
+      }
+    };
+
+    initQuagga();
+
+    return () => {
+      Quagga.stop();
+    };
+  }, [videoRef]);
+
+  const handleScan = async (scannedCode: string) => {
+    try {
+      const response = await axios.get(`http://127.0.0.1:8000/product/${scannedCode}`);
+      const product = response.data;
+      setProductName(product.name);
+      setProductPrice(product.price);
+    } catch (error) {
+      console.error('Error fetching product:', error);
+      setProductName('商品がマスタ未登録です');
+      setProductPrice('');
+    }
+  };
+
+  const handleAdd = () => {
+    setPurchaseList([...purchaseList, { code, name: productName, price: productPrice }]);
+    setProductName('');
+    setProductPrice('');
+    setCode('');
+  };
+
+  const handlePurchase = async () => {
+    try {
+      const response = await axios.post('http://127.0.0.1:8000/api/purchase', {
+        employeeCode: '1234567890',
+        storeCode: '30',
+        posId: '90',
+        items: purchaseList.map((item, index) => ({
+          id: index + 1,
+          code: item.code,
+          name: item.name,
+          price: item.price
+        }))
+      });
+      const total = response.data.totalAmount;
+      const totalWithoutTax = total / 1.1; // Assuming 10% tax rate
+      setTotalAmount(total);
+      setTotalAmountWithoutTax(totalWithoutTax);
+      setShowPopup(true);
+      setPurchaseList([]);
+    } catch (error) {
+      console.error('Error completing purchase:', error);
+    }
+  };
+
+  const closePopup = () => {
+    setShowPopup(false);
+    setCode('');
+    setProductName('');
+    setProductPrice('');
+  };
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:size-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f5f5f5' }}>
+      <div style={{ width: '400px', padding: '20px', backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 0 10px rgba(0, 0, 0, 0.1)' }}>
+        <button
+          onClick={() => {
+            if (Quagga.initialized) {
+              Quagga.start();
+            } else {
+              Quagga.init({
+                inputStream: {
+                  type: 'LiveStream',
+                  target: videoRef.current,
+                  constraints: {
+                    facingMode: 'environment'
+                  }
+                },
+                decoder: {
+                  readers: ['ean_reader', 'ean_8_reader']
+                }
+              }, (err) => {
+                if (err) {
+                  console.error(err);
+                  return;
+                }
+                Quagga.start();
+              });
+            }
+          }}
+          style={{ width: '100%', padding: '10px', backgroundColor: '#007bff', color: '#fff', borderRadius: '4px', border: 'none', cursor: 'pointer', marginBottom: '20px' }}
+        >
+          スキャン（カメラ）
+        </button>
+        <div ref={videoRef} style={{ width: '100%', height: '300px', borderRadius: '8px', marginBottom: '20px', backgroundColor: '#000' }} />
+        <div style={{ marginBottom: '20px' }}>
+          <input
+            type="text"
+            value={code}
+            readOnly
+            style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', marginBottom: '10px' }}
+          />
+          <div style={{ padding: '10px', backgroundColor: '#e9ecef', borderRadius: '4px', marginBottom: '10px' }}>
+            <span>{productName}</span>
+          </div>
+          <div style={{ padding: '10px', backgroundColor: '#e9ecef', borderRadius: '4px' }}>
+            <span>{productPrice}円</span>
+          </div>
         </div>
+        <button
+          onClick={handleAdd}
+          style={{ width: '100%', padding: '10px', backgroundColor: '#28a745', color: '#fff', borderRadius: '4px', border: 'none', cursor: 'pointer', marginBottom: '20px' }}
+        >
+          追加
+        </button>
+        <div style={{ marginBottom: '20px' }}>
+          <h2>購入リスト</h2>
+          <ul style={{ listStyleType: 'none', padding: '0', border: '1px solid #ccc', borderRadius: '4px', maxHeight: '150px', overflowY: 'scroll' }}>
+            {purchaseList.map((item, index) => (
+              <li key={index} style={{ padding: '5px 10px', borderBottom: '1px solid #ccc' }}>
+                {item.name} x1 {item.price}円
+              </li>
+            ))}
+          </ul>
+        </div>
+        <button
+          onClick={handlePurchase}
+          style={{ width: '100%', padding: '10px', backgroundColor: '#007bff', color: '#fff', borderRadius: '4px', border: 'none', cursor: 'pointer' }}
+        >
+          購入
+        </button>
+        {showPopup && (
+          <div style={{
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            backgroundColor: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 0 10px rgba(0, 0, 0, 0.1)', zIndex: 1000
+          }}>
+            <h3>購入完了</h3>
+            <p>合計金額（税込）: {totalAmount}円</p>
+            <p>合計金額（税抜）: {totalAmountWithoutTax.toFixed(2)}円</p>
+            <button
+              onClick={closePopup}
+              style={{ padding: '10px', backgroundColor: '#007bff', color: '#fff', borderRadius: '4px', border: 'none', cursor: 'pointer' }}
+            >
+              OK
+            </button>
+          </div>
+        )}
       </div>
-
-      <div className="relative z-[-1] flex place-items-center before:absolute before:h-[300px] before:w-full before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 sm:before:w-[480px] sm:after:w-[240px] before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className="mb-32 grid text-center lg:mb-0 lg:w-full lg:max-w-5xl lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-balance text-sm opacity-50">
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
+    </div>
   );
 }
